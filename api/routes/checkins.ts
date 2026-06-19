@@ -5,43 +5,6 @@ import { processPendingDeductions } from './bookings.js'
 
 const router = Router()
 
-function deductSingleBooking(bookingId: number, memberId: number): boolean {
-  const booking = db.prepare('SELECT * FROM bookings WHERE id = ? AND session_deducted = 0 AND status = ?').get(bookingId, 'booked') as any
-  if (!booking) return true
-
-  const rules = db.prepare('SELECT * FROM rules WHERE id = 1').get() as any
-  const cancelHours = rules?.cancel_hours_before ?? 2
-
-  const cls = db.prepare('SELECT * FROM classes WHERE id = ?').get(booking.class_id) as any
-  if (!cls) return false
-
-  const classDateTime = new Date(`${cls.date}T${cls.start_time}`)
-  const now = new Date()
-  const diffHours = (classDateTime.getTime() - now.getTime()) / (1000 * 60 * 60)
-
-  if (diffHours <= cancelHours) {
-    const pkg = db.prepare(
-      "SELECT * FROM packages WHERE member_id = ? AND remaining_sessions > 0 AND expires_at > datetime('now') ORDER BY expires_at ASC LIMIT 1"
-    ).get(memberId) as any
-
-    if (pkg) {
-      const deduct = db.transaction(() => {
-        db.prepare(
-          'UPDATE packages SET remaining_sessions = remaining_sessions - 1 WHERE id = ?'
-        ).run(pkg.id)
-        db.prepare(
-          'UPDATE bookings SET session_deducted = 1 WHERE id = ?'
-        ).run(bookingId)
-      })
-      deduct()
-      return true
-    }
-    return false
-  }
-
-  return true
-}
-
 router.post('/', authenticate, requireRole('coach', 'admin'), (req: Request, res: Response): void => {
   try {
     const { booking_id } = req.body
@@ -71,15 +34,25 @@ router.post('/', authenticate, requireRole('coach', 'admin'), (req: Request, res
 
     processPendingDeductions(booking.member_id)
 
+    const freshBooking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(booking_id) as any
+
+    let deductedThisTime = false
+    let deductionSkipped = false
+
     const doCheckin = db.transaction(() => {
-      if (!booking.session_deducted) {
+      if (!freshBooking.session_deducted) {
         const pkg = db.prepare(
           "SELECT * FROM packages WHERE member_id = ? AND remaining_sessions > 0 AND expires_at > datetime('now') ORDER BY expires_at ASC LIMIT 1"
         ).get(booking.member_id) as any
+
         if (pkg) {
           db.prepare('UPDATE packages SET remaining_sessions = remaining_sessions - 1 WHERE id = ?').run(pkg.id)
+          db.prepare('UPDATE bookings SET session_deducted = 1 WHERE id = ?').run(booking_id)
+          deductedThisTime = true
+        } else {
+          deductionSkipped = true
+          db.prepare('UPDATE bookings SET session_deducted = 1 WHERE id = ?').run(booking_id)
         }
-        db.prepare('UPDATE bookings SET session_deducted = 1 WHERE id = ?').run(booking_id)
       }
 
       db.prepare(
@@ -96,7 +69,19 @@ router.post('/', authenticate, requireRole('coach', 'admin'), (req: Request, res
     })
 
     doCheckin()
-    res.json({ success: true, message: '签到成功' })
+
+    res.json({
+      success: true,
+      message: '签到成功',
+      data: {
+        booking_id,
+        member_id: booking.member_id,
+        session_deducted_before: booking.session_deducted ? 1 : 0,
+        deducted_this_time: deductedThisTime,
+        deduction_skipped_no_package: deductionSkipped,
+        final_status: 'completed',
+      },
+    })
   } catch (error) {
     res.status(500).json({ success: false, error: '签到失败' })
   }
@@ -123,40 +108,102 @@ router.post('/attendance/:classId', authenticate, requireRole('coach', 'admin'),
     const attendanceRate = cls.booked_count > 0 ? actual_count / cls.booked_count : 0
     const warning = attendanceRate < 0.5
 
-    const bookedBookings = db.prepare(
-      "SELECT * FROM bookings WHERE class_id = ? AND status = 'booked'"
+    const allBookings = db.prepare(
+      "SELECT b.*, u.name AS member_name FROM bookings b JOIN users u ON b.member_id = u.id WHERE b.class_id = ? AND b.status IN ('booked', 'completed') ORDER BY b.id"
     ).all(classId) as any[]
 
-    const memberIds = [...new Set(bookedBookings.map(b => b.member_id))]
+    const memberIds = [...new Set(allBookings.map(b => b.member_id))]
     for (const mid of memberIds) {
       processPendingDeductions(mid)
     }
 
-    const month = cls.date.slice(0, 7)
+    const freshBookings = db.prepare(
+      "SELECT b.*, u.name AS member_name FROM bookings b JOIN users u ON b.member_id = u.id WHERE b.class_id = ? AND b.status IN ('booked', 'completed') ORDER BY b.id"
+    ).all(classId) as any[]
 
-    const processNoShows = db.transaction(() => {
-      for (const booking of bookedBookings) {
+    const alreadyCheckedIn = freshBookings.filter(b => b.status === 'completed')
+    const stillBooked = freshBookings.filter(b => b.status === 'booked')
+
+    const month = cls.date.slice(0, 7)
+    const deductionDetails: any[] = []
+    let totalDeductedThisTime = 0
+    let totalDeductionSkipped = 0
+    const noShowDetails: any[] = []
+
+    const processAll = db.transaction(() => {
+      for (const booking of alreadyCheckedIn) {
+        let deducted = false
+        let skipped = false
         if (!booking.session_deducted) {
           const pkg = db.prepare(
             "SELECT * FROM packages WHERE member_id = ? AND remaining_sessions > 0 AND expires_at > datetime('now') ORDER BY expires_at ASC LIMIT 1"
           ).get(booking.member_id) as any
           if (pkg) {
             db.prepare('UPDATE packages SET remaining_sessions = remaining_sessions - 1 WHERE id = ?').run(pkg.id)
+            deducted = true
+            totalDeductedThisTime++
+          } else {
+            skipped = true
+            totalDeductionSkipped++
+          }
+          db.prepare('UPDATE bookings SET session_deducted = 1 WHERE id = ?').run(booking.id)
+        }
+        deductionDetails.push({
+          booking_id: booking.id,
+          member_id: booking.member_id,
+          member_name: booking.member_name,
+          result: 'completed',
+          deducted_this_time: deducted,
+          deduction_skipped: skipped,
+          already_deducted_before: booking.session_deducted === 1,
+        })
+      }
+
+      for (const booking of stillBooked) {
+        let deducted = false
+        let skipped = false
+        if (!booking.session_deducted) {
+          const pkg = db.prepare(
+            "SELECT * FROM packages WHERE member_id = ? AND remaining_sessions > 0 AND expires_at > datetime('now') ORDER BY expires_at ASC LIMIT 1"
+          ).get(booking.member_id) as any
+          if (pkg) {
+            db.prepare('UPDATE packages SET remaining_sessions = remaining_sessions - 1 WHERE id = ?').run(pkg.id)
+            deducted = true
+            totalDeductedThisTime++
+          } else {
+            skipped = true
+            totalDeductionSkipped++
           }
           db.prepare('UPDATE bookings SET session_deducted = 1 WHERE id = ?').run(booking.id)
         }
 
-        db.prepare(
-          "UPDATE bookings SET status = 'no_show' WHERE id = ?"
-        ).run(booking.id)
-
+        db.prepare("UPDATE bookings SET status = 'no_show' WHERE id = ?").run(booking.id)
         db.prepare(
           'INSERT OR IGNORE INTO no_show_records (member_id, booking_id, month) VALUES (?, ?, ?)'
         ).run(booking.member_id, booking.id, month)
+
+        noShowDetails.push({
+          booking_id: booking.id,
+          member_id: booking.member_id,
+          member_name: booking.member_name,
+          deducted_this_time: deducted,
+          deduction_skipped: skipped,
+          already_deducted_before: booking.session_deducted === 1,
+        })
+
+        deductionDetails.push({
+          booking_id: booking.id,
+          member_id: booking.member_id,
+          member_name: booking.member_name,
+          result: 'no_show',
+          deducted_this_time: deducted,
+          deduction_skipped: skipped,
+          already_deducted_before: booking.session_deducted === 1,
+        })
       }
     })
 
-    processNoShows()
+    processAll()
 
     const rules = db.prepare('SELECT * FROM rules WHERE id = 1').get() as any
     const threshold = rules?.no_show_threshold ?? 3
@@ -183,8 +230,6 @@ router.post('/attendance/:classId', authenticate, requireRole('coach', 'admin'),
       ).get(m.member_id, weekStr) as any
 
       if (!existingSuspension) {
-        const suspendUntil = new Date(weekStart)
-        suspendUntil.setDate(suspendUntil.getDate() + suspendWeeks * 7)
         db.prepare(
           'INSERT INTO suspensions (member_id, week, reason) VALUES (?, ?, ?)'
         ).run(
@@ -201,10 +246,14 @@ router.post('/attendance/:classId', authenticate, requireRole('coach', 'admin'),
         class_id: classId,
         actual_count,
         booked_count: cls.booked_count,
+        checked_in_count: alreadyCheckedIn.length,
+        no_show_count: stillBooked.length,
         attendance_rate: Math.round(attendanceRate * 100) / 100,
         warning,
-        no_shows_flagged: bookedBookings.length,
+        total_deducted_this_time: totalDeductedThisTime,
+        total_deduction_skipped: totalDeductionSkipped,
         suspensions_created: noShowMembers.length,
+        deduction_details: deductionDetails,
       },
     })
   } catch (error) {
