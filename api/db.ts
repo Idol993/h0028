@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   member_id INTEGER NOT NULL REFERENCES users(id),
   class_id INTEGER NOT NULL REFERENCES classes(id),
   status TEXT NOT NULL CHECK(status IN ('booked', 'cancelled', 'completed', 'no_show')) DEFAULT 'booked',
+  session_deducted INTEGER NOT NULL DEFAULT 0,
   booked_at TEXT NOT NULL DEFAULT (datetime('now')),
   cancelled_at TEXT,
   UNIQUE(member_id, class_id)
@@ -169,6 +170,12 @@ CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status);
 CREATE INDEX IF NOT EXISTS idx_no_show_member_month ON no_show_records(member_id, month);
 CREATE INDEX IF NOT EXISTS idx_packages_member ON packages(member_id);
 `)
+
+try {
+  database.exec('ALTER TABLE bookings ADD COLUMN session_deducted INTEGER NOT NULL DEFAULT 0')
+} catch {
+  // Column already exists, ignore
+}
 
 const hashAdmin = bcrypt.hashSync('admin123', 10)
 const hashCoach = bcrypt.hashSync('coach123', 10)

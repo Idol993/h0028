@@ -1,12 +1,15 @@
 import { Router, type Request, type Response } from 'express'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
+import { processPendingDeductions } from './bookings.js'
 
 const router = Router()
 
 router.get('/my/packages', authenticate, (req: Request, res: Response): void => {
   try {
     const member_id = req.user!.id
+
+    processPendingDeductions(member_id)
 
     const packages = db.prepare(`
       SELECT * FROM packages WHERE member_id = ? ORDER BY expires_at ASC

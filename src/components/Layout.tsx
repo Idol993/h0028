@@ -31,7 +31,7 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
   ],
   coach: [
     { label: '我的课程', icon: <Calendar size={20} />, path: '/coach/classes' },
-    { label: '扫码核销', icon: <ScanLine size={20} />, path: '/coach/scan' },
+    { label: '扫码核销', icon: <ScanLine size={20} />, path: '/coach/checkin' },
     { label: '出勤录入', icon: <UserCheck size={20} />, path: '/coach/attendance' },
   ],
   admin: [

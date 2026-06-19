@@ -10,7 +10,7 @@ export default function MemberQRCode() {
 
   const generateQR = useCallback(async () => {
     if (!user) return
-    const payload = JSON.stringify({ memberId: user.id, timestamp })
+    const payload = JSON.stringify({ memberId: user.id, type: 'checkin', timestamp })
     try {
       const url = await QRCode.toDataURL(payload, {
         width: 260,
@@ -49,6 +49,10 @@ export default function MemberQRCode() {
         <div className="text-center mb-4">
           <div className="text-white font-bold text-lg">{user.name}</div>
           <div className="text-gray-400 text-sm mt-1">{user.phone}</div>
+          <div className="mt-3 inline-flex items-center gap-2 px-4 py-1.5 bg-orange-accent/15 rounded-lg">
+            <span className="text-orange-accent text-xs font-medium">会员ID</span>
+            <span className="text-orange-accent text-sm font-bold">{user.id}</span>
+          </div>
         </div>
 
         <button

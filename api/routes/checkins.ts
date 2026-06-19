@@ -110,7 +110,7 @@ router.post('/attendance/:classId', authenticate, requireRole('coach', 'admin'),
       const weekStart = new Date(now)
       const day = weekStart.getDay()
       const diff = day === 0 ? -6 : 1 - day
-      weekStart.setDate(weekStart.getDate() + diff)
+      weekStart.setDate(weekStart.getDate() + diff + 7)
       const weekStr = weekStart.toISOString().slice(0, 10)
 
       const existingSuspension = db.prepare(

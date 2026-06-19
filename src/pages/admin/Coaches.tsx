@@ -63,7 +63,7 @@ export default function Coaches() {
     try {
       setSaving(true)
       setError('')
-      await apiPost('/api/auth/register', { ...form, role: 'coach' })
+      await apiPost('/api/users', { ...form, role: 'coach' })
       setShowModal(false)
       fetchCoaches()
     } catch (err) {

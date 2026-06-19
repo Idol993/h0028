@@ -83,6 +83,7 @@ router.get('/coaches', authenticate, requireRole('admin'), (req: Request, res: R
       SELECT
         u.id,
         u.name,
+        u.phone,
         COUNT(c.id) AS class_count,
         CASE
           WHEN COUNT(c.id) > 0 AND SUM(c.booked_count) > 0

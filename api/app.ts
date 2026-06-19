@@ -16,6 +16,7 @@ import statsRoutes from './routes/stats.js'
 import rulesRoutes from './routes/rules.js'
 import reportsRoutes from './routes/reports.js'
 import membersRoutes from './routes/members.js'
+import usersRoutes from './routes/users.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -36,6 +37,7 @@ app.use('/api/stats', statsRoutes)
 app.use('/api/rules', rulesRoutes)
 app.use('/api/reports', reportsRoutes)
 app.use('/api/members', membersRoutes)
+app.use('/api/users', usersRoutes)
 
 app.use(
   '/api/health',

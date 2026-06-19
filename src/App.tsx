@@ -11,7 +11,9 @@ import MemberQRCode from '@/pages/member/QRCode'
 import MemberExportRecords from '@/pages/member/ExportRecords'
 import CoachClasses from '@/pages/coach/Classes'
 import CoachCheckin from '@/pages/coach/Checkin'
+import CoachCheckinClasses from '@/pages/coach/CheckinClasses'
 import CoachAttendance from '@/pages/coach/Attendance'
+import CoachAttendanceClasses from '@/pages/coach/AttendanceClasses'
 import AdminClasses from '@/pages/admin/Classes'
 import AdminCoaches from '@/pages/admin/Coaches'
 import AdminStats from '@/pages/admin/Stats'
@@ -47,7 +49,9 @@ export default function App() {
 
         <Route path="/coach" element={<ProtectedRoute role="coach"><Layout /></ProtectedRoute>}>
           <Route path="classes" element={<CoachClasses />} />
+          <Route path="checkin" element={<CoachCheckinClasses />} />
           <Route path="checkin/:classId" element={<CoachCheckin />} />
+          <Route path="attendance" element={<CoachAttendanceClasses />} />
           <Route path="attendance/:classId" element={<CoachAttendance />} />
         </Route>
 
