@@ -107,6 +107,15 @@ export default function Records() {
                   <div className="flex items-center gap-2 mb-2">
                     {booking.class_info && <ClassTypeBadge type={booking.class_info.type} />}
                     <StatusBadge status={booking.status} />
+                    {booking.status === 'booked' && (
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        booking.session_deducted
+                          ? 'bg-orange-accent/15 text-orange-accent'
+                          : 'bg-blue-500/15 text-blue-400'
+                      }`}>
+                        {booking.session_deducted ? '已扣课' : '已锁座'}
+                      </span>
+                    )}
                   </div>
                   <h3 className="text-white font-bold text-base mb-2 truncate">
                     {booking.class_info?.name || '课程'}

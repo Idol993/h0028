@@ -1,8 +1,46 @@
 import { Router, type Request, type Response } from 'express'
 import db from '../db.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
+import { processPendingDeductions } from './bookings.js'
 
 const router = Router()
+
+function deductSingleBooking(bookingId: number, memberId: number): boolean {
+  const booking = db.prepare('SELECT * FROM bookings WHERE id = ? AND session_deducted = 0 AND status = ?').get(bookingId, 'booked') as any
+  if (!booking) return true
+
+  const rules = db.prepare('SELECT * FROM rules WHERE id = 1').get() as any
+  const cancelHours = rules?.cancel_hours_before ?? 2
+
+  const cls = db.prepare('SELECT * FROM classes WHERE id = ?').get(booking.class_id) as any
+  if (!cls) return false
+
+  const classDateTime = new Date(`${cls.date}T${cls.start_time}`)
+  const now = new Date()
+  const diffHours = (classDateTime.getTime() - now.getTime()) / (1000 * 60 * 60)
+
+  if (diffHours <= cancelHours) {
+    const pkg = db.prepare(
+      "SELECT * FROM packages WHERE member_id = ? AND remaining_sessions > 0 AND expires_at > datetime('now') ORDER BY expires_at ASC LIMIT 1"
+    ).get(memberId) as any
+
+    if (pkg) {
+      const deduct = db.transaction(() => {
+        db.prepare(
+          'UPDATE packages SET remaining_sessions = remaining_sessions - 1 WHERE id = ?'
+        ).run(pkg.id)
+        db.prepare(
+          'UPDATE bookings SET session_deducted = 1 WHERE id = ?'
+        ).run(bookingId)
+      })
+      deduct()
+      return true
+    }
+    return false
+  }
+
+  return true
+}
 
 router.post('/', authenticate, requireRole('coach', 'admin'), (req: Request, res: Response): void => {
   try {
@@ -31,7 +69,19 @@ router.post('/', authenticate, requireRole('coach', 'admin'), (req: Request, res
       return
     }
 
+    processPendingDeductions(booking.member_id)
+
     const doCheckin = db.transaction(() => {
+      if (!booking.session_deducted) {
+        const pkg = db.prepare(
+          "SELECT * FROM packages WHERE member_id = ? AND remaining_sessions > 0 AND expires_at > datetime('now') ORDER BY expires_at ASC LIMIT 1"
+        ).get(booking.member_id) as any
+        if (pkg) {
+          db.prepare('UPDATE packages SET remaining_sessions = remaining_sessions - 1 WHERE id = ?').run(pkg.id)
+        }
+        db.prepare('UPDATE bookings SET session_deducted = 1 WHERE id = ?').run(booking_id)
+      }
+
       db.prepare(
         'INSERT INTO checkins (booking_id, checked_by) VALUES (?, ?)'
       ).run(booking_id, checked_by)
@@ -77,10 +127,25 @@ router.post('/attendance/:classId', authenticate, requireRole('coach', 'admin'),
       "SELECT * FROM bookings WHERE class_id = ? AND status = 'booked'"
     ).all(classId) as any[]
 
+    const memberIds = [...new Set(bookedBookings.map(b => b.member_id))]
+    for (const mid of memberIds) {
+      processPendingDeductions(mid)
+    }
+
     const month = cls.date.slice(0, 7)
 
     const processNoShows = db.transaction(() => {
       for (const booking of bookedBookings) {
+        if (!booking.session_deducted) {
+          const pkg = db.prepare(
+            "SELECT * FROM packages WHERE member_id = ? AND remaining_sessions > 0 AND expires_at > datetime('now') ORDER BY expires_at ASC LIMIT 1"
+          ).get(booking.member_id) as any
+          if (pkg) {
+            db.prepare('UPDATE packages SET remaining_sessions = remaining_sessions - 1 WHERE id = ?').run(pkg.id)
+          }
+          db.prepare('UPDATE bookings SET session_deducted = 1 WHERE id = ?').run(booking.id)
+        }
+
         db.prepare(
           "UPDATE bookings SET status = 'no_show' WHERE id = ?"
         ).run(booking.id)

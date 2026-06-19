@@ -50,8 +50,9 @@ function CircularProgress({ remaining, total }: { remaining: number; total: numb
 }
 
 export default function Packages() {
-  const [pkg, setPkg] = useState<Package | null>(null)
+  const [packages, setPackages] = useState<Package[]>([])
   const [history, setHistory] = useState<Booking[]>([])
+  const [pendingCount, setPendingCount] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -59,11 +60,14 @@ export default function Packages() {
       try {
         setLoading(true)
         const [pkgData, bookingsData] = await Promise.all([
-          apiGet<Package>('/api/members/my/packages'),
+          apiGet<Package[]>('/api/members/my/packages'),
           apiGet<Booking[]>('/api/bookings/my?status=completed'),
         ])
-        setPkg(pkgData)
+        setPackages(pkgData)
         setHistory(bookingsData)
+
+        const allBookings = await apiGet<Booking[]>('/api/bookings/my?status=booked')
+        setPendingCount(allBookings.filter(b => !b.session_deducted).length)
       } catch {} finally {
         setLoading(false)
       }
@@ -79,11 +83,15 @@ export default function Packages() {
     )
   }
 
-  if (!pkg) {
+  if (packages.length === 0) {
     return (
       <div className="text-center text-gray-500 py-20">暂无课时包信息</div>
     )
   }
+
+  const primary = packages[0]
+  const totalRemaining = packages.reduce((sum, p) => sum + p.remaining_sessions, 0)
+  const totalSessions = packages.reduce((sum, p) => sum + p.total_sessions, 0)
 
   const sortedHistory = [...history].sort((a, b) => {
     const dateA = a.class_info?.date || a.booked_at
@@ -95,11 +103,32 @@ export default function Packages() {
     <div className="animate-fadeIn space-y-6">
       <div className="bg-carbon rounded-2xl p-8 border border-white/5 flex flex-col items-center">
         <h2 className="text-white font-bold text-lg mb-6">我的课时包</h2>
-        <CircularProgress remaining={pkg.remaining_sessions} total={pkg.total_sessions} />
-        <div className="mt-6 text-gray-400 text-sm">
-          有效期至 <span className="text-white">{pkg.expires_at?.split('T')[0]}</span>
+        <CircularProgress remaining={primary.remaining_sessions} total={primary.total_sessions} />
+        <div className="mt-4 flex items-center gap-4 text-sm">
+          <div className="text-gray-400">
+            有效期至 <span className="text-white">{primary.expires_at?.split('T')[0]}</span>
+          </div>
         </div>
+        {packages.length > 1 && (
+          <div className="mt-3 text-gray-500 text-xs">
+            多个课时包合计：{totalRemaining} / {totalSessions} 次
+          </div>
+        )}
       </div>
+
+      {pendingCount > 0 && (
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 text-xs font-bold shrink-0">
+            {pendingCount}
+          </div>
+          <div>
+            <div className="text-blue-400 text-sm font-medium">待扣课预约</div>
+            <div className="text-gray-400 text-xs mt-0.5">
+              {pendingCount} 节课已锁座，开课前2小时将自动扣课
+            </div>
+          </div>
+        </div>
+      )}
 
       <div>
         <h3 className="text-white font-bold text-base mb-4">扣课记录</h3>

@@ -29,6 +29,7 @@ export interface Booking {
   member_id: number
   class_id: number
   status: BookingStatus
+  session_deducted: number
   booked_at: string
   cancelled_at: string | null
   class_info?: GymClass

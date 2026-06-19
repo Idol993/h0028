@@ -229,6 +229,15 @@ export default function CoachCheckin() {
                   <Phone size={10} />
                   <span>{maskPhone((foundBooking as any).member_phone || '')}</span>
                 </div>
+                <div className="mt-1">
+                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs ${
+                    foundBooking.session_deducted
+                      ? 'bg-orange-accent/15 text-orange-accent'
+                      : 'bg-blue-500/15 text-blue-400'
+                  }`}>
+                    {foundBooking.session_deducted ? '已扣课' : '已锁座待扣课'}
+                  </span>
+                </div>
               </div>
               {foundBooking.status === 'completed' ? (
                 <span className="text-xs text-mint font-medium">已签到</span>
